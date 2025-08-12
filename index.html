@@ -1,28 +1,429 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PWA App</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="manifest" href="manifest.json">
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js');
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>موقع بطاقات المراجعة</title>
+  <style>
+    :root{
+      --bg:#f3f4f6; --card:#ffffff; --accent:#0ea5a4; --muted:#6b7280;
+      --success:#d1fae5; --danger:#fee2e2;
     }
-  </script>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; background:var(--bg); color:#0f172a;}
+    .wrap{max-width:900px;margin:18px auto;padding:16px;}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    h1{margin:0;font-size:20px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    button{cursor:pointer;border:0;background:var(--card);padding:8px 10px;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+    .primary{background:var(--accent);color:#fff}
+    .card{background:var(--card);padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.06); margin-bottom:12px}
+    .grid{display:grid;gap:10px}
+    .cols-2{grid-template-columns:1fr 1fr}
+    label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
+    input[type="text"]{width:100%;padding:10px;border:1px solid #e6e9ee;border-radius:8px}
+    .list{display:grid;gap:8px}
+    .card-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .small{font-size:13px;color:var(--muted)}
+    .options-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
+    .option{padding:14px;border-radius:10px;background:#fff;border:1px solid #f1f5f9;font-weight:600}
+    .option.correct{background:var(--success);border-color:#10b981}
+    .option.wrong{background:var(--danger);border-color:#f43f5e}
+    .muted{color:var(--muted)}
+    footer{margin-top:16px;text-align:center;color:var(--muted);font-size:13px}
+    @media (max-width:520px){
+      .cols-2{grid-template-columns:1fr}
+      .options-grid{grid-template-columns:1fr}
+    }
+  </style>
 </head>
 <body>
-  <header>
-    <h1>PWA Menu</h1>
-  </header>
-  <main>
-    <ul class="menu">
-      <li>Home</li>
-      <li>About</li>
-      <li>Services</li>
-      <li>Contact</li>
-    </ul>
-  </main>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>موقع بطاقات المراجعة</h1>
+        <div class="small">اختر المعنى الصحيح من 6 خيارات — القاموس مملوك لك (المعنى تكتبه بنفسك)</div>
+      </div>
+      <div class="controls">
+        <button id="btn-dashboard" class="primary">الرئيسية</button>
+        <button id="btn-add">أضف بطاقة</button>
+        <button id="btn-review">ابدأ المراجعة</button>
+        <button id="btn-export">تصدير</button>
+        <label style="display:inline-block;cursor:pointer;padding:6px 10px;border-radius:8px;background:#fff;border:1px solid #e6e9ee">
+          استيراد
+          <input id="import-file" type="file" accept="application/json" style="display:none">
+        </label>
+      </div>
+    </header>
+
+    <main id="main">
+
+      <!-- Dashboard -->
+      <section id="view-dashboard" class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px">
+          <div>
+            <div class="small">عدد البطاقات</div>
+            <div style="font-weight:700;font-size:18px" id="cards-count">0</div>
+          </div>
+          <div>
+            <div class="small">نتيجة الجلسة الحالية</div>
+            <div style="font-weight:700;font-size:18px" id="session-score">0</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div class="small">البطاقات (انقر على مراجعة لبدء مراجعة بطاقة مفردة)</div>
+            <div class="small muted">يمكن استخدام زر التصدير لنسخة احتياطية</div>
+          </div>
+          <div id="cards-list" class="list"></div>
+        </div>
+      </section>
+
+      <!-- Add -->
+      <section id="view-add" class="card" style="display:none">
+        <h3 style="margin-top:0">أضف بطاقة جديدة</h3>
+        <form id="add-form" class="grid">
+          <div>
+            <label>الكلمة (بالإنجليزية)</label>
+            <input id="field-word" type="text" placeholder="مثال: apple">
+          </div>
+          <div>
+            <label>المعنى (تكتبه بنفسك)</label>
+            <input id="field-meaning" type="text" placeholder="مثال: تفاحة">
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="submit" class="primary">أضف</button>
+            <button type="button" id="btn-clear">مسح</button>
+          </div>
+          <div class="small muted">عند الإضافة، سيتم استخدام معاني البطاقات الأخرى لتوليد خيارات خاطئة تلقائياً.</div>
+        </form>
+      </section>
+
+      <!-- Review -->
+      <section id="view-review" class="card" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="small">مراجعة بطاقة <span id="review-index">0</span> / <span id="review-total">0</span></div>
+          <div class="small">نقاط الجلسة: <span id="review-score">0</span></div>
+        </div>
+
+        <div style="text-align:center;margin-bottom:10px">
+          <div style="font-size:28px;font-weight:700" id="review-word">—</div>
+          <div style="margin-top:8px">
+            <button id="btn-pronounce">🔊 نطق</button>
+          </div>
+        </div>
+
+        <div id="options" class="options-grid"></div>
+      </section>
+
+      <!-- Results -->
+      <section id="view-results" class="card" style="display:none">
+        <h3 style="margin-top:0">انتهت الجلسة</h3>
+        <div class="small">درجتك: <span id="final-score">0</span> / <span id="final-total">0</span></div>
+        <div style="margin-top:12px">
+          <div class="small" style="font-weight:700">الكلمات التي أخطأت فيها:</div>
+          <ul id="wrong-list" class="small"></ul>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button id="btn-restart" class="primary">إعادة الجلسة</button>
+          <button id="btn-back-dashboard">العودة للرئيسية</button>
+        </div>
+      </section>
+
+    </main>
+
+    <footer>
+      <div class="small muted">حفظ محلياً على جهازك — يمكنك تصدير/استيراد البطاقات كـ JSON.</div>
+    </footer>
+  </div>
+
+<script>
+/* بطاقات جاهزة (English words) */
+const SAMPLE_CARDS = [
+  { word: "apple", correct: "تفاحة" },
+  { word: "book", correct: "كتاب" },
+  { word: "cat", correct: "قطة" },
+  { word: "dog", correct: "كلب" },
+  { word: "house", correct: "منزل" },
+  { word: "car", correct: "سيارة" },
+  { word: "water", correct: "ماء" },
+  { word: "phone", correct: "هاتف" },
+  { word: "table", correct: "طاولة" },
+  { word: "chair", correct: "كرسي" },
+  { word: "sun", correct: "شمس" },
+  { word: "moon", correct: "قمر" }
+];
+
+const STORAGE_KEY = 'simple-flashcards-v1';
+
+/* --- State --- */
+let cards = [];
+let queue = [];
+let index = 0;
+let score = 0;
+let wrongCards = [];
+
+/* --- Helpers --- */
+function save() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(cards)); } catch(e){ console.error(e) }
+}
+function load() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try { cards = JSON.parse(raw); }
+    catch(e){ cards = SAMPLE_CARDS.slice(); save(); }
+  } else {
+    cards = SAMPLE_CARDS.slice(); save();
+  }
+}
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]} return arr; }
+
+/* Build options: correct + up to 5 wrongs from other cards */
+function buildOptions(card){
+  const pool = cards.map(c => c.correct).filter(m => m && m !== card.correct);
+  shuffle(pool);
+  const wrongs = pool.slice(0,5);
+  while(wrongs.length < 5) wrongs.push("خيار غير صحيح");
+  const opts = shuffle([card.correct, ...wrongs].slice(0,6));
+  return opts;
+}
+
+/* UI elements */
+const el = {
+  dashboard: document.getElementById('view-dashboard'),
+  add: document.getElementById('view-add'),
+  review: document.getElementById('view-review'),
+  results: document.getElementById('view-results'),
+  cardsList: document.getElementById('cards-list'),
+  count: document.getElementById('cards-count'),
+  sessionScore: document.getElementById('session-score'),
+  addForm: document.getElementById('add-form'),
+  wordField: document.getElementById('field-word'),
+  meaningField: document.getElementById('field-meaning'),
+  reviewWord: document.getElementById('review-word'),
+  reviewIndex: document.getElementById('review-index'),
+  reviewTotal: document.getElementById('review-total'),
+  reviewScore: document.getElementById('review-score'),
+  optionsWrap: document.getElementById('options'),
+  pronounceBtn: document.getElementById('btn-pronounce'),
+  finalScore: document.getElementById('final-score'),
+  finalTotal: document.getElementById('final-total'),
+  wrongList: document.getElementById('wrong-list'),
+};
+
+/* Navigation buttons */
+document.getElementById('btn-dashboard').onclick = ()=>show('dashboard');
+document.getElementById('btn-add').onclick = ()=>show('add');
+document.getElementById('btn-review').onclick = startReview;
+document.getElementById('btn-export').onclick = exportJSON;
+document.getElementById('import-file').onchange = importJSON;
+document.getElementById('btn-clear').onclick = ()=>{ el.wordField.value=''; el.meaningField.value=''; };
+document.getElementById('btn-restart').onclick = startReview;
+document.getElementById('btn-back-dashboard').onclick = ()=>show('dashboard');
+
+/* Add form */
+el.addForm.addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const w = el.wordField.value.trim();
+  const m = el.meaningField.value.trim();
+  if(!w || !m){ alert('ادخل الكلمة والمعنى'); return; }
+  const newCard = { id: uid(), word: w, correct: m };
+  cards.unshift(newCard);
+  save();
+  el.wordField.value=''; el.meaningField.value='';
+  refreshList();
+  show('dashboard');
+});
+
+/* Pronounce */
+document.getElementById('btn-pronounce').onclick = () => {
+  const text = el.reviewWord.textContent || '';
+  if(!text) return;
+  if('speechSynthesis' in window){
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    const voices = window.speechSynthesis.getVoices();
+    const v = voices.find(x=>x.lang && x.lang.startsWith('en'));
+    if(v) u.voice = v;
+    window.speechSynthesis.speak(u);
+  } else alert('النطق غير مدعوم في المتصفح');
+}
+
+/* Show view */
+function show(name){
+  ['dashboard','add','review','results'].forEach(k=>{
+    document.getElementById('view-'+k).style.display = (k===name ? '' : 'none');
+  });
+  if(name==='dashboard') refreshList();
+  if(name==='results') renderResults();
+}
+
+/* Refresh cards list on dashboard */
+function refreshList(){
+  el.cardsList.innerHTML = '';
+  el.count.textContent = cards.length;
+  el.sessionScore.textContent = score;
+  if(cards.length===0){ el.cardsList.innerHTML = '<div class="small muted">لا توجد بطاقات</div>'; return; }
+  cards.forEach(c=>{
+    const row = document.createElement('div');
+    row.className = 'card-row';
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:700">${c.word}</div>
+        <div class="small muted">${c.correct}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button title="نطق" class="muted" data-pronounce>🔊</button>
+        <button data-review class="" style="padding:6px 8px;border-radius:8px">مراجعة</button>
+        <button data-delete class="small" style="color:#ef4444">حذف</button>
+      </div>
+    `;
+    el.cardsList.appendChild(row);
+
+    row.querySelector('[data-pronounce]').onclick = () => {
+      if('speechSynthesis' in window){
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(c.word);
+        u.lang = 'en-US';
+        const voices = window.speechSynthesis.getVoices();
+        const v = voices.find(x=>x.lang && x.lang.startsWith('en'));
+        if(v) u.voice = v;
+        window.speechSynthesis.speak(u);
+      } else alert('النطق غير متاح');
+    };
+    row.querySelector('[data-review]').onclick = ()=>{
+      // single-card review session
+      queue = [c];
+      index = 0;
+      score = 0;
+      wrongCards = [];
+      show('review');
+      startCard();
+    };
+    row.querySelector('[data-delete]').onclick = ()=>{
+      if(confirm('هل تريد حذف البطاقة؟')){
+        cards = cards.filter(x=>x !== c);
+        save();
+        refreshList();
+      }
+    };
+  });
+}
+
+/* Start full review (all cards randomized) */
+function startReview(){
+  if(cards.length===0){ alert('لا توجد بطاقات للمراجعة'); return; }
+  queue = cards.slice();
+  shuffle(queue);
+  index = 0;
+  score = 0;
+  wrongCards = [];
+  show('review');
+  startCard();
+}
+
+/* Start current card */
+function startCard(){
+  const current = queue[index];
+  if(!current) { show('results'); return; }
+  el.reviewWord.textContent = current.word;
+  el.reviewIndex.textContent = index + 1;
+  el.reviewTotal.textContent = queue.length;
+  el.reviewScore.textContent = score;
+  // build options
+  const opts = buildOptions(current);
+  el.optionsWrap.innerHTML = '';
+  opts.forEach((opt, i)=>{
+    const btn = document.createElement('button');
+    btn.className = 'option';
+    btn.textContent = opt;
+    btn.onclick = ()=> handlePick(i, opt);
+    el.optionsWrap.appendChild(btn);
+  });
+}
+
+/* Handle pick */
+let answered = false;
+function handlePick(i, picked){
+  if(answered) return;
+  answered = true;
+  const current = queue[index];
+  const buttons = Array.from(el.optionsWrap.children);
+  buttons.forEach(btn=>{
+    const txt = btn.textContent;
+    if(txt === current.correct) btn.classList.add('correct');
+    if(txt === picked && txt !== current.correct) btn.classList.add('wrong');
+    btn.disabled = true;
+  });
+  if(picked === current.correct){ score++; el.reviewScore.textContent = score; }
+  else { wrongCards.push(current); }
+  // next after delay
+  setTimeout(()=>{
+    answered = false;
+    index++;
+    if(index < queue.length) startCard();
+    else show('results');
+  }, 700);
+}
+
+/* Results render */
+function renderResults(){
+  el.finalScore.textContent = score;
+  el.finalTotal.textContent = queue.length || 0;
+  el.wrongList.innerHTML = '';
+  if(wrongCards.length===0){
+    el.wrongList.innerHTML = '<li class="small">أحسنت — لم تخطئ أي كلمة!</li>';
+  } else {
+    wrongCards.forEach(w=>{
+      const li = document.createElement('li');
+      li.textContent = w.word + ' — ' + w.correct;
+      el.wrongList.appendChild(li);
+    });
+  }
+}
+
+/* Export / Import */
+function exportJSON(){
+  const data = JSON.stringify(cards, null, 2);
+  const blob = new Blob([data], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'flashcards.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function importJSON(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const arr = JSON.parse(r.result);
+      if(!Array.isArray(arr)) throw new Error('invalid');
+      const sanitized = arr.map(it=>({
+        id: it.id || uid(),
+        word: it.word || '',
+        correct: it.correct || it.meaning || ''
+      }));
+      cards = sanitized.concat(cards);
+      save();
+      refreshList();
+      alert('تم الاستيراد');
+    }catch(err){
+      alert('ملف غير صالح');
+    }
+  };
+  r.readAsText(f);
+}
+
+/* Init */
+load();
+refreshList();
+show('dashboard');
+
+</script>
 </body>
 </html>
